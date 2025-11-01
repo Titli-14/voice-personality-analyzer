@@ -3,4 +3,4 @@ librosa
 soundfile
 numpy
 scipy
-werkzeug
+gunicorn
