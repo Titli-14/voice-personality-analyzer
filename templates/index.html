@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice Personality Analyzer</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" />
+  <style>
+    body {
+      background: linear-gradient(135deg, #b2c8ff, #e6e9ff);
+      font-family: "Poppins", sans-serif;
+    }
+    .card {
+      background: white;
+      border-radius: 1.5rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      padding: 2rem;
+      max-width: 480px;
+      margin: 2rem auto;
+    }
+    button {
+      border-radius: 9999px;
+      font-weight: 600;
+    }
+    #result {
+      display: none;
+      margin-top: 1.5rem;
+    }
+    #audioPlayer {
+      display: none;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+  <div class="card text-center">
+    <h1 class="text-2xl font-bold mb-4">🎙️ Voice Personality Analyzer</h1>
+    <p class="text-gray-600 mb-6">Record or upload your voice to discover what your tone says about you!</p>
+
+    <!-- Upload -->
+    <div class="flex flex-col items-center space-y-3">
+      <input id="audioFile" type="file" accept="audio/*" class="hidden" />
+      <button id="chooseFileBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2">
+        📁 Choose Audio File
+      </button>
+      <span id="fileName" class="text-sm text-gray-500"></span>
+
+      <audio id="audioPlayer" controls class="w-full"></audio>
+
+      <div class="flex space-x-4 mt-3">
+        <button id="startRecordBtn" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2">
+          🎤 Start Recording
+        </button>
+        <button id="analyzeBtn" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2">
+          🔍 Analyze
+        </button>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="hidden mt-6 text-indigo-600 font-medium">
+      ⏳ Analyzing your voice...
+    </div>
+
+    <!-- Results -->
+    <div id="result" class="text-left border-t border-gray-200 pt-4 mt-6"></div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById("audioFile");
+    const chooseFileBtn = document.getElementById("chooseFileBtn");
+    const fileNameSpan = document.getElementById("fileName");
+    const audioPlayer = document.getElementById("audioPlayer");
+    const startRecordBtn = document.getElementById("startRecordBtn");
+    const analyzeBtn = document.getElementById("analyzeBtn");
+    const loading = document.getElementById("loading");
+    const resultDiv = document.getElementById("result");
+
+    let recordedBlob = null;
+    let recorder = null;
+    let stream = null;
+
+    // Choose file button
+    chooseFileBtn.onclick = () => fileInput.click();
+
+    fileInput.onchange = () => {
+      const file = fileInput.files[0];
+      if (file) {
+        fileNameSpan.textContent = `🎵 ${file.name}`;
+        audioPlayer.src = URL.createObjectURL(file);
+        audioPlayer.style.display = "block";
+      }
+    };
+
+    // Start recording
+    startRecordBtn.onclick = async () => {
+      if (recorder && recorder.state === "recording") {
+        recorder.stop();
+        startRecordBtn.textContent = "🎤 Start Recording";
+        return;
+      }
+
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recorder = new MediaRecorder(stream);
+      const chunks = [];
+
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = () => {
+        recordedBlob = new Blob(chunks, { type: "audio/wav" });
+        const audioURL = URL.createObjectURL(recordedBlob);
+        audioPlayer.src = audioURL;
+        audioPlayer.style.display = "block";
+        fileNameSpan.textContent = "🎙️ Recorded Audio";
+      };
+
+      recorder.start();
+      startRecordBtn.textContent = "⏹️ Stop Recording";
+    };
+
+    // Analyze button
+    analyzeBtn.onclick = async () => {
+      let file;
+      if (fileInput.files.length > 0) {
+        file = fileInput.files[0];
+      } else if (recordedBlob) {
+        file = new File([recordedBlob], "recorded.wav", { type: "audio/wav" });
+      } else {
+        alert("Please upload or record audio first!");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("audio", file);
+
+      loading.classList.remove("hidden");
+      resultDiv.style.display = "none";
+
+      const response = await fetch("/analyze", { method: "POST", body: formData });
+      const result = await response.json();
+
+      loading.classList.add("hidden");
+      resultDiv.style.display = "block";
+
+      if (result.error) {
+        resultDiv.innerHTML = `<p class='text-red-600'>❌ Error: ${result.error}</p>`;
+        return;
+      }
+
+      const s = result.scores;
+      const i = result.interpretations;
+      resultDiv.innerHTML = `
+        <p>💬 <b>Confidence:</b> ${s.confidence}/100 — ${i.confidence}</p>
+        <p>🌿 <b>Calmness:</b> ${s.calmness}/100 — ${i.calmness}</p>
+        <p>🔥 <b>Energy:</b> ${s.energy}/100</p>
+        <p>💖 <b>Warmth:</b> ${s.warmth}/100 — ${i.warmth}</p>
+        <p>⚡ <b>Speed:</b> ${s.speaking_speed}/100 — ${i.speaking_speed}</p>
+        <p>🎵 <b>Pitch Variety:</b> ${s.pitch_variability}/100 — ${i.pitch_variability}</p>
+        <p>🌈 <b>Charm:</b> ${s.charm}/100 — ${i.charm}</p>
+        <hr class="my-2" />
+        <p>⏱️ <b>Duration:</b> ${result.duration_seconds}s | 🎼 <b>Avg Pitch:</b> ${result.avg_pitch_hz} Hz</p>
+      `;
+    };
+  </script>
+</body>
+</html>
+
