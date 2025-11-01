@@ -1,0 +1,6 @@
+Flask
+librosa
+soundfile
+numpy
+scipy
+werkzeug
